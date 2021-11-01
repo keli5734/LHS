@@ -38,24 +38,28 @@ log_qFI_range = [-8,-4];
 log_qMF_range = [-8,-4];
 %kappaF_range = [0,20];
 log_V50_range = [6,8];
-log_k1_range = [-2,2];
-log_k2_range = [-8,-4];
+%log_k1_range = [-2,2];
+%log_k2_range = [-8,-4];
 log_qprime_range = [-4,-6];
 
 
-parameter_range = [log_beta_range;sV_range;log_qFI_range;log_qMF_range;log_V50_range;...
-                   log_k1_range; log_k2_range;log_qprime_range];
+parameter_range = [log_beta_range;
+                   sV_range;
+                   log_qFI_range;
+                   log_qMF_range;
+                   log_V50_range;
+                   log_qprime_range];
 lb_parameter = parameter_range(:,1);
 ub_parameter = parameter_range(:,2);
 size_ub = size(ub_parameter);
 
-N = 1e+3;
+N = 1e+4;
 p = size_ub(1);
 Parameter_sampling_normalised = lhsdesign(N,p,'criterion','correlation');
 
 ub_lb = ub_parameter-lb_parameter;
 
-Parameter_sampling = zeros(N,p);
+Parameter_sampling = zeros(N,p); % LHS matrix. N sample size, p parameters 
 for i = 1:p
 
     Parameter_sampling(:,i) = lb_parameter(i)+Parameter_sampling_normalised(:,i).*ub_lb(i);
@@ -86,9 +90,9 @@ delta_M2 = 1.1e-2;
 
 s_V = Parameter_sampling(:,2); %2
 
-k1 = 10.^Parameter_sampling(:,6);%0.4; % 2e+3; % The maximal rate of MR -> M1 (0.4 TB paper)
+k1 = 0.4; %2e+3; % The maximal rate of MR -> M1 (0.4 TB paper)
 
-k2 = 10.^Parameter_sampling(:,7);%0.8*1e-5; %5e-5; % The maximal rate of MR -> M2 
+k2 = 0.4*1e-5; %5e-5; % The maximal rate of MR -> M2 
 
 k21 = 0;  %the maximal rate of M2 -> M1
 
@@ -117,7 +121,7 @@ beta = 10.^Parameter_sampling(:,1);
 
 beta_prime = 5e-7; %5e-7;
 
-q_prime =  10.^Parameter_sampling(:,8); %5e-5; % virus loss due to bind to macrophages
+q_prime =  10.^Parameter_sampling(:,6); %5e-5; % virus loss due to bind to macrophages
 
 delta_I = 2;
 
@@ -301,6 +305,11 @@ Viral_peak_value = zeros(1,N);
 Peak_time = zeros(1,N);
 Macrophages_peak_value = zeros(1,N);
 Parameter_stored = zeros(N,p);
+AUC_V = zeros(1,N);
+AUC_M = zeros(1,N);
+AUC_M1 = zeros(1,N);
+AUC_M2 = zeros(1,N);
+Target_cell_consumption = zeros(1,N);
 
 
 % for loop starts here
@@ -308,7 +317,7 @@ for i = 1:N
 
 [~,y_inf] = ode15s(@Macrophage_infection_S2, report_time_inf, init_inf, options,...
                        s_M, delta_MR,...
-                       s_V(i), k1(i), k2(i), alpha1, D_50, k_m1, k_m2,V50_M(i),...
+                       s_V(i), k1, k2, alpha1, D_50, k_m1, k_m2,V50_M(i),...
                        delta_M1,delta_M2,q_prime(i),kappa_T,k21,...
                        g_T,T_max,beta(i),beta_prime,phi,xi_R,delta_I,kappa_F,kappa_E,...
                        p_I,p_M,delta_V,kappa_MV,kappa_AS,...
@@ -321,20 +330,27 @@ for i = 1:N
                    [Viral_peak_value(i), b] = max(log10(y_inf(:,6)));
                    Peak_time(i) = (b-1)/24;
                    Macrophages_peak_value(i) = max(log10(y_inf(:,1)+y_inf(:,2)+y_inf(:,3)));
+                   Target_cell_consumption(i) = min(y_inf(:,4)+y_inf(:,8)) / T_max;
                    
-                   if Basic_reproduction_number(i)>=2 && Basic_reproduction_number(i)<= 75
-                        if Viral_peak_value(i) >=2 && Viral_peak_value(i) <=7
-                            if  Peak_time(i) >=1 && Peak_time(i) <=3
-                                if Macrophages_peak_value(i) >=6 && Macrophages_peak_value(i) <= 7
+                   
+                   if Basic_reproduction_number(i)>=3 && Basic_reproduction_number(i)<= 75 % the basic reproduction number is between 3 and 75
+                        if Viral_peak_value(i) >=2 && Viral_peak_value(i) <=7 % the peak value of viral load is 2 ~ 7 magnitudes higher than the inoculation
+                            if  Peak_time(i) >=1 && Peak_time(i) <=4 % the peak time of viral load is between 1 to 4 days
+                                if Macrophages_peak_value(i) >=6 && Macrophages_peak_value(i) <= 7 % the peak value of macrophages is between the magnitude of 6 and 7
+                                    if Target_cell_consumption(i) >= 0.9 % total consumption of target cells is less than 10% of overall epithelial cells.
                                
                                Parameter_stored(i,1) = beta(i);
                                Parameter_stored(i,2) = s_V(i);
                                Parameter_stored(i,3) = q_FI(i);
                                Parameter_stored(i,4) = q_FM(i);                
                                Parameter_stored(i,5) = V50_M(i);
-                               Parameter_stored(i,6) = k1(i);
-                               Parameter_stored(i,7) = k2(i);
-                               Parameter_stored(i,8) = q_prime(i);
+                               Parameter_stored(i,6) = q_prime(i);
+                               
+                               
+                               AUC_V(i) = trapz(y_inf(:,6));
+                               AUC_M(i) = trapz(y_inf(:,1)+y_inf(:,2)+y_inf(:,3));
+                               AUC_M1(i) = trapz(y_inf(:,2));
+                               AUC_M2(i) = trapz(y_inf(:,3));
                        %}
                                
                                figure(33)
@@ -352,17 +368,10 @@ for i = 1:N
                                semilogy(Days_Mac, M_SP83,'k*')
                                semilogy(Days_Mac, M_TX91,'k*')
                                ylabel('Total macrophages')
+                                
                                
-                               figure(35)
-                               plot(report_time_inf, y_inf(:,2), 'LineWidth',1.5)
-                               hold on 
-                               ylabel('M1 macrophages')
                                
-                               figure(36)
-                               plot(report_time_inf, y_inf(:,3), 'LineWidth',1.5)
-                               hold on 
-                               ylabel('M2 macrophages')
-                               
+                                    end                         
                                 end 
                            end 
                        end 
