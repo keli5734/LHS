@@ -1,0 +1,8 @@
+function my_histogram(Data, x_range, nbins, FC, FA)
+
+histogram(Data,nbins, 'FaceColor', FC, 'FaceAlpha', FA)
+
+xlim(x_range)
+end 
+
+
